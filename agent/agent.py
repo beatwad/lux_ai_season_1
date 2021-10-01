@@ -180,15 +180,11 @@ def in_city(pos):
     except:
         return False
     
-# check if unit has enough time, space and resources to build city
+# check if unit has enough time and space to build a city
 def build_city_is_possible(unit, pos):    
     global game_state
     global player
-    
-    if not unit.can_build(game_state.map):
-        return False
-#     if unit.cargo.wood + unit.cargo.coal + unit.cargo.uranium < 100:
-#         return False
+
     if game_state.turn % 40 < 30:
         return True
     x, y = pos.x, pos.y
@@ -269,6 +265,7 @@ def agent(observation, configuration):
     for city in player.cities.values():
         for city_tile in city.citytiles:
             if city_tile.can_act():
+                # at first game stages try to produce maximum amount of agents and research point
                 if game_state.turn < 60:
                     if unit_count < player.city_tile_count: 
                         actions.append(city_tile.build_worker())
@@ -276,6 +273,7 @@ def agent(observation, configuration):
                     elif not player.researched_uranium():
                         actions.append(city_tile.research())
                         player.research_points += 1
+                # then follow NN strategy
                 else:
                     state = make_city_input(observation, [city_tile.pos.x, city_tile.pos.y])
                     with torch.no_grad():
