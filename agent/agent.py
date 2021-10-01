@@ -217,9 +217,8 @@ def get_unit_action(policy, unit, dest):
     for label in np.argsort(policy)[::-1]:
         act = unit_actions[label]
         pos = unit.pos.translate(act[-1], 1) or unit.pos
-#         if label == 4 and not build_city_is_possible(unit, pos):
-#             print(act)
-#             continue
+        if label == 4 and not build_city_is_possible(unit, pos):
+            return unit.move('c'), unit.pos
         if pos not in dest or in_city(pos):
             return call_func(unit, *act), pos 
             
