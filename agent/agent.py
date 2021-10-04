@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from lux.game import Game
 
-path = '/kaggle_simulations/agent' if os.path.exists('/kaggle_simulations') else 'agent' # change to 'agent' for tests
+path = '/kaggle_simulations/agent' if os.path.exists('/kaggle_simulations') else '.' # change to 'agent' for tests
 model = torch.jit.load(f'{path}/model.pth')
 model.eval()
 model_city = torch.jit.load(f'{path}/model_city.pth')
@@ -260,23 +260,27 @@ def agent(observation, configuration):
             actions.append(action)
             dest.append(pos)
     
+    map_size = game_state.map.height
+    map_size_dict = {12: 60, 16: 60, 24: 60, 32: 60}
+    print(map_size)
+    
     # City Actions
     unit_count = len(player.units)
     for city in player.cities.values():
         for city_tile in city.citytiles:
             if city_tile.can_act():
                 # at first game stages try to produce maximum amount of agents and research point
-#                 if game_state.turn < 60:
+                if game_state.turn < map_size_dict[map_size]:
 #                 if not player.researched_uranium():
-#                     if unit_count < player.city_tile_count: 
-#                         actions.append(city_tile.build_worker())
-#                         unit_count += 1
-#                     else:
-# #                     elif not player.researched_uranium():
-#                         actions.append(city_tile.research())
-#                         player.research_points += 1
+                    if unit_count < player.city_tile_count: 
+                        actions.append(city_tile.build_worker())
+                        unit_count += 1
+                    else:
+#                     elif not player.researched_uranium():
+                        actions.append(city_tile.research())
+                        player.research_points += 1
                 # then follow NN strategy
-#                 else:
+                else:
                     state = make_city_input(observation, [city_tile.pos.x, city_tile.pos.y])
                     with torch.no_grad():
                         p = model_city(torch.from_numpy(state).unsqueeze(0))
