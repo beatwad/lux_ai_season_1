@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from lux.game import Game
 
-path = '/kaggle_simulations/agent' if os.path.exists('/kaggle_simulations') else '.' # change to 'agent' for tests
+path = '/kaggle_simulations/agent' if os.path.exists('/kaggle_simulations') else 'agent' # change to 'agent' for tests
 model = torch.jit.load(f'{path}/model.pth')
 model.eval()
 model_city = torch.jit.load(f'{path}/model_city.pth')
