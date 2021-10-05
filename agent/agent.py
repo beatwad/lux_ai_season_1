@@ -3,7 +3,7 @@ import numpy as np
 import torch
 from lux.game import Game
 
-path = '/kaggle_simulations/agent' if os.path.exists('/kaggle_simulations') else 'agent' # change to 'agent' for tests
+path = '/kaggle_simulations/agent' if os.path.exists('/kaggle_simulations') else '.' # change to 'agent' for tests
 model = torch.jit.load(f'{path}/model.pth')
 model.eval()
 model_city = torch.jit.load(f'{path}/model_city.pth')
@@ -221,16 +221,16 @@ def get_unit_action(policy, unit, dest):
     return unit.move('c'), unit.pos
 
 # translate city policy to action
-city_actions = [(None,), ('build_worker',), ('research', )]
+city_actions = [('build_worker',), ('research', )]
 def get_city_action(policy, city_tile, unit_count):
     global player
     
     for label in np.argsort(policy)[::-1]:
         act = city_actions[label]
-        if label == 1 and unit_count < player.city_tile_count:
+        if label == 0 and unit_count < player.city_tile_count:
             unit_count += 1
             res = call_func(city_tile, *act)
-        elif label == 2 and not player.researched_uranium():
+        elif label == 1 and not player.researched_uranium():
             player.research_points += 1
             res = call_func(city_tile, *act)
         else:
@@ -260,23 +260,17 @@ def agent(observation, configuration):
             actions.append(action)
             dest.append(pos)
     
-    map_size = game_state.map.height
-    map_size_dict = {12: 60, 16: 60, 24: 60, 32: 60}
-    print(map_size)
-    
     # City Actions
     unit_count = len(player.units)
     for city in player.cities.values():
         for city_tile in city.citytiles:
             if city_tile.can_act():
                 # at first game stages try to produce maximum amount of agents and research point
-                if game_state.turn < map_size_dict[map_size]:
-#                 if not player.researched_uranium():
+                if game_state.turn < 60:
                     if unit_count < player.city_tile_count: 
                         actions.append(city_tile.build_worker())
                         unit_count += 1
-                    else:
-#                     elif not player.researched_uranium():
+                    elif not player.researched_uranium() and game_state.turn > 40:
                         actions.append(city_tile.research())
                         player.research_points += 1
                 # then follow NN strategy
