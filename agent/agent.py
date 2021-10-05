@@ -233,24 +233,18 @@ def closest_ct_pos_to_save(unit, city_tiles):
     closest_dist = math.inf
     closest_pos = None
     unit_cargo = unit.cargo.wood + unit.cargo.coal*10 + unit.cargo.uranium*40
+    if unit_cargo == 0:
+        return None
     for ct in city_tiles:
         city_id = ct.cityid
         city = player.cities[city_id]
         ct_fuel = city.fuel
-        print(f'ct_fuel - {ct_fuel}')
-        print(f'light_upkeep - {city.get_light_upkeep()}')
         if ct_fuel + unit_cargo > (city.get_light_upkeep()) * 10:
             dist = unit.pos.distance_to(ct.pos)
-            print(f'dist - {dist}')
             if dist < closest_dist:
                 closest_dist = dist
                 closest_pos = ct.pos
-    if closest_pos and closest_dist <= 2:
-        print(f'unit - {unit.id}')
-        print(f'unit_pos - {unit.pos}')
-        print(f'unit_cargo - {unit_cargo}')
-        print(f'closest_dist - {closest_dist}')
-        print(f'closest_pos - {closest_pos.x, closest_pos.y}')
+    if closest_pos and closest_dist == 1:
         return closest_pos
     return None
         
@@ -299,10 +293,11 @@ def agent(observation, configuration):
     actions = []
     city_tiles = []
     
-    if game_state.turn % 40 == 30:
+    if game_state.turn % 40 >= 30:
         city_tiles = ct_that_wont_survive_night()
+        for ct in city_tiles:
+            print(ct.pos)
     
-    # Unit Actions
     dest = []
     for unit in player.units:
         if unit.can_act():
@@ -311,7 +306,16 @@ def agent(observation, configuration):
             if game_state.turn % 40 >= 30:
                 if not in_city(unit.pos) and city_tiles:
                     ct_pos = closest_ct_pos_to_save(unit, city_tiles)          
-                    print(f'ct_pos - {ct_pos}')
+            # if this position exists - send unit there
+            if ct_pos:
+                direction = unit.pos.direction_to(ct_pos)
+                new_pos = unit.pos.translate(direction, 1)
+                if new_pos not in dest:
+                    action = unit.move(direction)
+                    actions.append(action)
+                    dest.append(new_pos)
+                else:
+                    ct_pos = None
             # if this position doesn't exist - follow NN strategy
             if not ct_pos:
                 if game_state.turn % 40 < 30 or not in_city(unit.pos):
@@ -324,23 +328,11 @@ def agent(observation, configuration):
                     action, pos = get_unit_action(policy, unit, dest)
                     actions.append(action)
                     dest.append(pos)
-            else:
-                # if this position exists - send unit there
-                print(f'turn - {game_state.turn}, ct_pos_x - {ct_pos.x}, ct_pos_y - {ct_pos.y}, unit_pos - {unit.pos}')
-                direction = unit.pos.direction_to(ct_pos)
-                new_pos = unit.pos.translate(direction, 1)
-                if new_pos not in dest:
-                    action = unit.move(direction)
-                    actions.append(action)
-                    print(f'actions - {actions}')
-                    print(f'action - {action}')
-                    dest.append(new_pos)
-                    
-                
+                                                   
     
     map_size = game_state.map.height
     map_size_dict = {12: 60, 16: 60, 24: 60, 32: 60}
-    game_state_turn_dict = {12: 10, 16: 10, 24: 10, 32: 40}
+    game_state_turn_dict = {12: 5, 16: 5, 24: 5, 32: 5}
     
     # City Actions
     unit_count = len(player.units)
