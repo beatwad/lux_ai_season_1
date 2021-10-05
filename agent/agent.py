@@ -232,20 +232,27 @@ def closest_ct_pos_to_save(unit, city_tiles):
     
     closest_dist = math.inf
     closest_pos = None
-    unit_cargo = unit.cargo.wood + unit.cargo.coal + unit.cargo.uranium
-    if unit_cargo == 0:
-        return None
-    print(city_tiles)
+    unit_cargo = unit.cargo.wood + unit.cargo.coal*10 + unit.cargo.uranium*40
     for ct in city_tiles:
         city_id = ct.cityid
         city = player.cities[city_id]
         ct_fuel = city.fuel
+        print(f'ct_fuel - {ct_fuel}')
+        print(f'light_upkeep - {city.get_light_upkeep()}')
         if ct_fuel + unit_cargo > (city.get_light_upkeep()) * 10:
             dist = unit.pos.distance_to(ct.pos)
+            print(f'dist - {dist}')
             if dist < closest_dist:
                 closest_dist = dist
                 closest_pos = ct.pos
-    return closest_pos
+    if closest_pos and closest_dist <= 2:
+        print(f'unit - {unit.id}')
+        print(f'unit_pos - {unit.pos}')
+        print(f'unit_cargo - {unit_cargo}')
+        print(f'closest_dist - {closest_dist}')
+        print(f'closest_pos - {closest_pos.x, closest_pos.y}')
+        return closest_pos
+    return None
         
 
 def call_func(obj, method, args=[]):
@@ -299,7 +306,15 @@ def agent(observation, configuration):
     dest = []
     for unit in player.units:
         if unit.can_act():
-            if game_state.turn % 40 < 30:
+            # if night and unit not in the city, find position of closest city, that can be saved
+            ct_pos = None
+            if game_state.turn % 40 >= 30:
+                if not in_city(unit.pos) and city_tiles:
+                    ct_pos = closest_ct_pos_to_save(unit, city_tiles)          
+                    print(f'ct_pos - {ct_pos}')
+            # if this position doesn't exist - follow NN strategy
+            if not ct_pos:
+                if game_state.turn % 40 < 30 or not in_city(unit.pos):
                     state = make_input(observation, unit.id)
                     with torch.no_grad():
                         p = model(torch.from_numpy(state).unsqueeze(0))
@@ -310,22 +325,22 @@ def agent(observation, configuration):
                     actions.append(action)
                     dest.append(pos)
             else:
-                # if night and unit not in the city, find closest city, that
-                # can be saved and send him there
-                if not in_city(unit.pos) and city_tiles:
-                    ct_pos = closest_ct_pos_to_save(unit, city_tiles)
-                    if ct_pos:
-                        print(f'turn - {game_state.turn}, ct_pos_x - {ct_pos.x}, ct_pos_y - {ct_pos.y}, unit_pos - {unit.pos}')
-                        direction = unit.pos.direction_to(ct_pos)
-                        new_pos = unit.pos.translate(direction, 1)
-                        if new_pos not in dest:
-                            unit.move(direction)
-                            dest.append(new_pos)
+                # if this position exists - send unit there
+                print(f'turn - {game_state.turn}, ct_pos_x - {ct_pos.x}, ct_pos_y - {ct_pos.y}, unit_pos - {unit.pos}')
+                direction = unit.pos.direction_to(ct_pos)
+                new_pos = unit.pos.translate(direction, 1)
+                if new_pos not in dest:
+                    action = unit.move(direction)
+                    actions.append(action)
+                    print(f'actions - {actions}')
+                    print(f'action - {action}')
+                    dest.append(new_pos)
                     
                 
     
     map_size = game_state.map.height
     map_size_dict = {12: 60, 16: 60, 24: 60, 32: 60}
+    game_state_turn_dict = {12: 10, 16: 10, 24: 10, 32: 40}
     
     # City Actions
     unit_count = len(player.units)
@@ -337,7 +352,7 @@ def agent(observation, configuration):
                     if unit_count < player.city_tile_count: 
                         actions.append(city_tile.build_worker())
                         unit_count += 1
-                    elif not player.researched_uranium() and game_state.turn > 40:
+                    elif not player.researched_uranium() and game_state.turn > game_state_turn_dict[map_size]:
                         actions.append(city_tile.research())
                         player.research_points += 1
 #                 # then follow NN strategy
