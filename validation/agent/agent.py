@@ -267,23 +267,23 @@ def agent(observation, configuration):
         for city_tile in city.citytiles:
             if city_tile.can_act():
                 # at first game stages try to produce maximum amount of agents and research point
-                if game_state.turn < 60:
-                    if unit_count < player.city_tile_count: 
-                        actions.append(city_tile.build_worker())
-                        unit_count += 1
-                    elif not player.researched_uranium():
-                        actions.append(city_tile.research())
-                        player.research_points += 1
+#                 if game_state.turn < 60:
+                if unit_count < player.city_tile_count: 
+                    actions.append(city_tile.build_worker())
+                    unit_count += 1
+                elif not player.researched_uranium():
+                    actions.append(city_tile.research())
+                    player.research_points += 1
                 # then follow NN strategy
-                else:
-                    state = make_city_input(observation, [city_tile.pos.x, city_tile.pos.y])
-                    with torch.no_grad():
-                        p = model_city(torch.from_numpy(state).unsqueeze(0))
+#                 else:
+#                     state = make_city_input(observation, [city_tile.pos.x, city_tile.pos.y])
+#                     with torch.no_grad():
+#                         p = model_city(torch.from_numpy(state).unsqueeze(0))
 
-                    policy = p.squeeze(0).numpy()
+#                     policy = p.squeeze(0).numpy()
 
-                    action, unit_count = get_city_action(policy, city_tile, unit_count)
-                    if action:
-                        actions.append(action)
+#                     action, unit_count = get_city_action(policy, city_tile, unit_count)
+#                     if action:
+#                         actions.append(action)
     
     return actions
