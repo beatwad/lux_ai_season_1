@@ -277,7 +277,7 @@ def call_func(obj, method, args=[]):
 
 
 # translate unit policy to action
-unit_actions = [('move', 'n'), ('move', 's'), ('move', 'w'), ('move', 'e'), ('build_city',)]
+unit_actions = [('move', 'c'), ('move', 'n'), ('move', 's'), ('move', 'w'), ('move', 'e'), ('build_city',)]
 def get_unit_action(policy, unit, dest):
     for label in np.argsort(policy)[::-1]:
         act = unit_actions[label]
