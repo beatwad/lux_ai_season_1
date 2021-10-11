@@ -246,6 +246,12 @@ def in_city(pos):
     except:
         return False
     
+# check if unit is in city or not
+def on_res_tile(pos):    
+    res = game_state.map.get_cell_by_pos(pos).has_resource()
+    print(f'pos - {pos}, res - {res}')
+    return res
+    
 # check if unit has enough time and space to build a city
 def build_city_is_possible(unit, pos):    
     global game_state
@@ -262,7 +268,6 @@ def build_city_is_possible(unit, pos):
         if city_id in player.cities:
             city = player.cities[city_id]
             if city.fuel > (city.get_light_upkeep() + 18) * 10:
-                print('True')
                 return True
     return False
 
@@ -280,8 +285,7 @@ def get_unit_action(policy, unit, dest):
         if label == 4 and not build_city_is_possible(unit, pos):
             return unit.move('c'), unit.pos
         if pos not in dest or in_city(pos):
-            return call_func(unit, *act), pos 
-            
+            return call_func(unit, *act), pos      
     return unit.move('c'), unit.pos
 
 # translate city policy to action
@@ -339,7 +343,7 @@ def agent(observation, configuration):
     # Unit Actions
     dest = []
     for unit in player.units:
-        if unit.can_act() and (game_state.turn % 40 < 30 or not in_city(unit.pos)):
+        if unit.can_act() and (game_state.turn % 40 < 30 or (not in_city(unit.pos) and not on_res_tile(unit.pos))):
             state = make_input(observation, unit.id)
             with torch.no_grad():
                 p = model(torch.from_numpy(state).unsqueeze(0))
