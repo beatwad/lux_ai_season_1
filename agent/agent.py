@@ -11,79 +11,65 @@ model.eval()
 model_city = torch.jit.load(f'{path}/model_city.pth')
 model_city.eval()
 
-from math import inf
-
 def manhattan_distance(x1, y1, x2, y2):
     return (abs(x2-x1) + abs(y2-y1))
 
 # make list of users and their current and previous coords and cooldowns 
 # to write them in NN training subset
-def find_user_coords(obs, units, x_shift, y_shift):
+def find_units_from_previous_obs(obs, x_shift, y_shift):
     # at first fill the unit dict with units from previous observation
-    prev_update = obs['prev_update']
-    if prev_update:
-        for update in prev_update:
-            strs = update.split(' ')
-            input_identifier = strs[0]
-            # if we found observation for user
-            if input_identifier == 'u':
-                unit_id = strs[3]
-                x, y = 0, 0
-                prev_x = int(strs[4]) + x_shift
-                prev_y = int(strs[5]) + y_shift
-                cooldown = 0
-                prev_cooldown = float(strs[6])
-                # flag of city building
-                bcity = 0
-                units[unit_id] = [x, y, prev_x, prev_y, cooldown, prev_cooldown, bcity]
-        
-    # then update it's coordinates and action with information from current update
-    for update in obs['updates']:
-        strs = update.split(' ')
-        input_identifier = strs[0]
-        # if we found observation for user
-        if input_identifier == 'u':
-            unit_id = strs[3]
-            x = int(strs[4]) + x_shift
-            y = int(strs[5]) + y_shift
-            cooldown = float(strs[6])
-            # flag of city building
-            bcity = 0
-            # if unit isn't new and it's cooldown is changed from zero to nonzero, than means that 
-            # action happened so we should write previous coords of unit, else don't change them
-            if unit_id in units:
-                prev_cooldown = units[unit_id][4]
-                units[unit_id][0], units[unit_id][1] = x, y
-                prev_x = units[unit_id][2]
-                prev_y = units[unit_id][3]
-                if cooldown > 0 and prev_cooldown == 0:
-                    # if action is happened but coords don't change - that means that unit has built a city 
-                    if x == prev_x and y == prev_y:
-                        bcity = 1  
-            else:
-                prev_cooldown = cooldown
-                prev_x = x
-                prev_y = y
+    updates = obs['updates']
+    updates_lag_1 = obs['updates_lag_1']
+    updates_lag_2 = obs['updates_lag_2']
+    updates_lag_3 = obs['updates_lag_3']
+    updates_lag_4 = obs['updates_lag_4']
+    prev_updates = [updates, updates_lag_1, updates_lag_2, updates_lag_3, updates_lag_4]
+    prev_units = list()
+    for prev_update in prev_updates:
+        units = dict()
+        if prev_update:
+            for update in prev_update:
+                strs = update.split(' ')
+                input_identifier = strs[0]
+                # if we found observation for user
+                if input_identifier == 'u':
+                    unit_id = strs[3]
+                    x = int(strs[4]) + x_shift
+                    y = int(strs[5]) + y_shift
+                    cooldown = float(strs[6])
+                    units[unit_id] = [x, y, cooldown]
+            prev_units.append(units)
+        else:
+            break
+    return prev_units
+
+def find_prev_coords(prev_units, unit_id):
+    # find previous coordinates of unit by ananlyzing its cooldown
+    x, y = None, None
+    for i in range(len(prev_units)-1):
+        if unit_id in prev_units[i] and unit_id in prev_units[i+1]:
+            cooldown = prev_units[i][unit_id][0]
+            prev_x = prev_units[i+1][unit_id][0]
+            prev_y = prev_units[i+1][unit_id][1]
+            prev_cooldown = prev_units[i+1][unit_id][2]
+            if cooldown > 0 and prev_cooldown == 0:
+                return prev_x, prev_y
+        else:
+            break
+    return x, y
             
-            units[unit_id] = [x, y, prev_x, prev_y, cooldown, prev_cooldown, bcity]
-    return units
-
-
 # Input for Neural Network for workers
 def make_input(obs, unit_id):
-    global units
-    
     width, height = obs['width'], obs['height']
     x_shift = (32 - width) // 2
     y_shift = (32 - height) // 2
-    
-    units = {}
+
     cities = {}
     
     b = np.zeros((26, 32, 32), dtype=np.float32)
     
-    units = find_user_coords(obs, units, x_shift, y_shift)
-    x_u, y_u = units[unit_id][0], units[unit_id][1]
+    prev_units = find_units_from_previous_obs(obs, x_shift, y_shift)
+    x_u, y_u = prev_units[0][unit_id][0], prev_units[0][unit_id][1]
     
     for update in obs['updates']:
         strs = update.split(' ')
@@ -97,12 +83,14 @@ def make_input(obs, unit_id):
             coal = int(strs[8])
             uranium = int(strs[9])
             if strs[3] == unit_id: # 0:2
-                # Position and Cargo
+                # Position, Cargo and Previous Position
                 b[:2, x, y] = (
                     1,
                     (wood + coal + uranium) / 100
                 )
-                prev_x, prev_y = units[unit_id][2], units[unit_id][3]
+                prev_x, prev_y = find_prev_coords(prev_units, unit_id)
+                if not prev_x and not prev_y:
+                    prev_x, prev_y = x, y
                 b[2, prev_x, prev_y] = 1
             else:                  # 3:10
                 # Units
@@ -320,28 +308,27 @@ def agent(observation, configuration):
     
     game_state = get_game_state(observation)    
     player = game_state.players[observation.player]
-    actions = []        
+    actions = [] 
+    prev_obs = dict()
     
     with open(f'{path}/tmp.json') as json_file:
         try:
             prev_obs = json.load(json_file)
         except json.decoder.JSONDecodeError:
-            prev_obs = dict()
-            prev_obs['prev_update_lag_1'] = None
-            prev_obs['prev_update_lag_2'] = None
-            prev_obs['prev_update_lag_3'] = None
-            prev_obs['prev_update_lag_4'] = None
-        
-    observation['prev_update'] = None
-    
-    if prev_obs:
-        if prev_obs['prev_update_lag_2']:
-            observation['prev_update'] = prev_obs['prev_update_lag_2']      
+            prev_obs['updates_lag_1'] = None
+            prev_obs['updates_lag_2'] = None
+            prev_obs['updates_lag_3'] = None
+            prev_obs['updates_lag_4'] = None
             
-    prev_obs['prev_update_lag_4'] = prev_obs['prev_update_lag_3']
-    prev_obs['prev_update_lag_3'] = prev_obs['prev_update_lag_2']
-    prev_obs['prev_update_lag_2'] = prev_obs['prev_update_lag_1']
-    prev_obs['prev_update_lag_1'] = observation['updates']
+    observation['updates_lag_4'] = prev_obs['updates_lag_4']
+    observation['updates_lag_3'] = prev_obs['updates_lag_3']
+    observation['updates_lag_2'] = prev_obs['updates_lag_2']
+    observation['updates_lag_1'] = prev_obs['updates_lag_1']
+    
+    prev_obs['updates_lag_4'] = prev_obs['updates_lag_3']
+    prev_obs['updates_lag_3'] = prev_obs['updates_lag_2']
+    prev_obs['updates_lag_2'] = prev_obs['updates_lag_1']
+    prev_obs['updates_lag_1'] = observation['updates']
     
     if game_state.turn < 359:
         with open(f'{path}/tmp.json', 'w+') as json_file:
@@ -368,24 +355,14 @@ def agent(observation, configuration):
     for city in player.cities.values():
         for city_tile in city.citytiles:
             if city_tile.can_act():
-                # at first game stages try to produce maximum amount of agents and research point
-#                 if game_state.turn < 60:
-#                     if unit_count < player.city_tile_count: 
-#                         actions.append(city_tile.build_worker())
-#                         unit_count += 1
-#                     elif not player.researched_uranium():
-#                         actions.append(city_tile.research())
-#                         player.research_points += 1
-# #               then follow NN strategy
-#                 else:
-                    state = make_city_input(observation, [city_tile.pos.x, city_tile.pos.y])
-                    with torch.no_grad():
-                        p = model_city(torch.from_numpy(state).unsqueeze(0))
+                state = make_city_input(observation, [city_tile.pos.x, city_tile.pos.y])
+                with torch.no_grad():
+                    p = model_city(torch.from_numpy(state).unsqueeze(0))
 
-                    policy = p.squeeze(0).numpy()
+                policy = p.squeeze(0).numpy()
 
-                    action, unit_count = get_city_action(policy, city_tile, unit_count)
-                    if action:
-                        actions.append(action)
+                action, unit_count = get_city_action(policy, city_tile, unit_count)
+                if action:
+                    actions.append(action)
     
     return actions
