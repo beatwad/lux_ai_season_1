@@ -66,7 +66,7 @@ def make_input(obs, unit_id):
 
     cities = {}
     
-    b = np.zeros((26, 32, 32), dtype=np.float32)
+    b = np.zeros((27, 32, 32), dtype=np.float32)
     
     prev_units = find_units_from_previous_obs(obs, x_shift, y_shift)
     x_u, y_u = prev_units[0][unit_id][0], prev_units[0][unit_id][1]
@@ -127,12 +127,13 @@ def make_input(obs, unit_id):
             access = 0 if my_rp < access_level else 1
             b[{'wood': 17, 'coal': 18, 'uranium': 19}[r_type], x, y] = amt / 800
             b[20, x, y] = access
+            b[21, x, y] = manhattan_distance(x_u, y_u, x, y)/((width-1) + (height-1))
         elif input_identifier == 'rp':  # 21:22
             # Research Points
             team = int(strs[1])
             rp = int(strs[2])
             my_rp = rp if team == obs['player'] else my_rp
-            b[21 + (team - obs['player']) % 2, :] = min(rp, 200) / 200
+            b[22 + (team - obs['player']) % 2, :] = min(rp, 200) / 200
         elif input_identifier == 'c':
             # Cities
             city_id = strs[2]
@@ -141,12 +142,18 @@ def make_input(obs, unit_id):
             cities[city_id] = min(fuel / lightupkeep, 10) / 10
     
     # Day/Night Cycle
-    b[23, :] = obs['step'] % 40 / 40
+    b[24, :] = obs['step'] % 40 / 40
     # Turns
-    b[24, :] = obs['step'] / 360
+    b[25, :] = obs['step'] / 360
+#     # Day / Night
+#     b[26, :] = 1 if obs['step'] % 40 < 30 else 0
     # Map Size
-    b[25, x_shift:32 - x_shift, y_shift:32 - y_shift] = 1
-
+    b[26, x_shift:32 - x_shift, y_shift:32 - y_shift] = 1
+    # Map Size + places where unit can't move (all other units and adversarial cities)
+#     b[27, x_shift:32 - x_shift, y_shift:32 - y_shift] = 1
+#     b[27, x_shift:32 - x_shift, y_shift:32 - y_shift] ^=  b[3, x_shift:32 - x_shift, y_shift:32 - y_shift]
+#     b[27, x_shift:32 - x_shift, y_shift:32 - y_shift] ^=  b[7, x_shift:32 - x_shift, y_shift:32 - y_shift]
+#     b[27, x_shift:32 - x_shift, y_shift:32 - y_shift] ^=  b[14, x_shift:32 - x_shift, y_shift:32 - y_shift]
     return b
 
 # Input for Neural Network for cities
@@ -249,6 +256,7 @@ def in_city(pos):
 # check if unit is in city or not
 def on_res_tile(pos):    
     res = game_state.map.get_cell_by_pos(pos).has_resource()
+    print(f'pos - {pos}, res - {res}')
     return res
     
 # check if unit has enough time and space to build a city
@@ -288,16 +296,16 @@ def get_unit_action(policy, unit, dest):
     return unit.move('c'), unit.pos
 
 # translate city policy to action
-city_actions = [(None, ), ('build_worker', ), ('research', )]
+city_actions = [('build_worker',), ('research', )]
 def get_city_action(policy, city_tile, unit_count):
     global player
     
     for label in np.argsort(policy)[::-1]:
         act = city_actions[label]
-        if label == 1 and unit_count < player.city_tile_count:
+        if label == 0 and unit_count < player.city_tile_count:
             unit_count += 1
             res = call_func(city_tile, *act)
-        elif label == 2 and not player.researched_uranium():
+        elif label == 1 and not player.researched_uranium():
             player.research_points += 1
             res = call_func(city_tile, *act)
         else:
