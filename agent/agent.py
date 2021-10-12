@@ -5,7 +5,7 @@ import torch
 from math import inf
 from lux.game import Game
 
-path = '/kaggle_simulations/agent' if os.path.exists('/kaggle_simulations') else 'agent' # change to 'agent' for tests
+path = '/kaggle_simulations/agent' if os.path.exists('/kaggle_simulations') else '.' # change to 'agent' for tests
 model = torch.jit.load(f'{path}/model.pth')
 model.eval()
 model_city = torch.jit.load(f'{path}/model_city.pth')
@@ -249,7 +249,6 @@ def in_city(pos):
 # check if unit is in city or not
 def on_res_tile(pos):    
     res = game_state.map.get_cell_by_pos(pos).has_resource()
-    print(f'pos - {pos}, res - {res}')
     return res
     
 # check if unit has enough time and space to build a city
@@ -277,7 +276,7 @@ def call_func(obj, method, args=[]):
 
 
 # translate unit policy to action
-unit_actions = [('move', 'c'), ('move', 'n'), ('move', 's'), ('move', 'w'), ('move', 'e'), ('build_city',)]
+unit_actions = [('move', 'n'), ('move', 's'), ('move', 'w'), ('move', 'e'), ('build_city',)]
 def get_unit_action(policy, unit, dest):
     for label in np.argsort(policy)[::-1]:
         act = unit_actions[label]
@@ -289,16 +288,16 @@ def get_unit_action(policy, unit, dest):
     return unit.move('c'), unit.pos
 
 # translate city policy to action
-city_actions = [('build_worker',), ('research', )]
+city_actions = [(None, ), ('build_worker', ), ('research', )]
 def get_city_action(policy, city_tile, unit_count):
     global player
     
     for label in np.argsort(policy)[::-1]:
         act = city_actions[label]
-        if label == 0 and unit_count < player.city_tile_count:
+        if label == 1 and unit_count < player.city_tile_count:
             unit_count += 1
             res = call_func(city_tile, *act)
-        elif label == 1 and not player.researched_uranium():
+        elif label == 2 and not player.researched_uranium():
             player.research_points += 1
             res = call_func(city_tile, *act)
         else:
