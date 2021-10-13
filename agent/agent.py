@@ -58,7 +58,7 @@ def find_prev_coords(prev_units, unit_id):
             break
     return x, y
             
-# Input for Neural Network for workers
+# Input for Neural Network for units
 def make_input(obs, unit_id):
     width, height = obs['width'], obs['height']
     x_shift = (32 - width) // 2
@@ -66,7 +66,7 @@ def make_input(obs, unit_id):
 
     cities = {}
     
-    b = np.zeros((27, 32, 32), dtype=np.float32)
+    b = np.zeros((28, 32, 32), dtype=np.float32)
     
     prev_units = find_units_from_previous_obs(obs, x_shift, y_shift)
     x_u, y_u = prev_units[0][unit_id][0], prev_units[0][unit_id][1]
@@ -140,20 +140,15 @@ def make_input(obs, unit_id):
             fuel = float(strs[3])
             lightupkeep = float(strs[4])
             cities[city_id] = min(fuel / lightupkeep, 10) / 10
-    
     # Day/Night Cycle
     b[24, :] = obs['step'] % 40 / 40
     # Turns
     b[25, :] = obs['step'] / 360
-#     # Day / Night
-#     b[26, :] = 1 if obs['step'] % 40 < 30 else 0
+    # Day / Night
+    b[26, :] = 1 if obs['step'] % 40 < 30 else 0
     # Map Size
-    b[26, x_shift:32 - x_shift, y_shift:32 - y_shift] = 1
-    # Map Size + places where unit can't move (all other units and adversarial cities)
-#     b[27, x_shift:32 - x_shift, y_shift:32 - y_shift] = 1
-#     b[27, x_shift:32 - x_shift, y_shift:32 - y_shift] ^=  b[3, x_shift:32 - x_shift, y_shift:32 - y_shift]
-#     b[27, x_shift:32 - x_shift, y_shift:32 - y_shift] ^=  b[7, x_shift:32 - x_shift, y_shift:32 - y_shift]
-#     b[27, x_shift:32 - x_shift, y_shift:32 - y_shift] ^=  b[14, x_shift:32 - x_shift, y_shift:32 - y_shift]
+    b[27, x_shift:32 - x_shift, y_shift:32 - y_shift] = 1
+        
     return b
 
 # Input for Neural Network for cities
