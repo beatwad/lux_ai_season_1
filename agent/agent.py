@@ -66,7 +66,7 @@ def make_input(obs, unit_id):
 
     cities = {}
     
-    b = np.zeros((27, 32, 32), dtype=np.float32)
+    b = np.zeros((28, 32, 32), dtype=np.float32)
     
     prev_units = find_units_from_previous_obs(obs, x_shift, y_shift)
     x_u, y_u = prev_units[0][unit_id][0], prev_units[0][unit_id][1]
@@ -140,20 +140,15 @@ def make_input(obs, unit_id):
             fuel = float(strs[3])
             lightupkeep = float(strs[4])
             cities[city_id] = min(fuel / lightupkeep, 10) / 10
-    
     # Day/Night Cycle
     b[24, :] = obs['step'] % 40 / 40
     # Turns
     b[25, :] = obs['step'] / 360
-#     # Day / Night
-#     b[26, :] = 1 if obs['step'] % 40 < 30 else 0
-    # Map Size
-    b[26, x_shift:32 - x_shift, y_shift:32 - y_shift] = 1
-    # Map Size + places where unit can't move (all other units and adversarial cities)
-#     b[27, x_shift:32 - x_shift, y_shift:32 - y_shift] = 1
-#     b[27, x_shift:32 - x_shift, y_shift:32 - y_shift] ^=  b[3, x_shift:32 - x_shift, y_shift:32 - y_shift]
-#     b[27, x_shift:32 - x_shift, y_shift:32 - y_shift] ^=  b[7, x_shift:32 - x_shift, y_shift:32 - y_shift]
-#     b[27, x_shift:32 - x_shift, y_shift:32 - y_shift] ^=  b[14, x_shift:32 - x_shift, y_shift:32 - y_shift]
+    # Day / Night
+    b[26, :] = 1 if obs['step'] % 40 < 30 else 0
+    # Map Size + tiles where unit can't move (all other units and adversarial cities)
+    b[27, x_shift:32 - x_shift, y_shift:32 - y_shift] = 1
+        
     return b
 
 # Input for Neural Network for cities
@@ -302,7 +297,8 @@ def get_city_action(policy, city_tile, unit_count):
     
     for label in np.argsort(policy)[::-1]:
         act = city_actions[label]
-        if label == 0 and unit_count < player.city_tile_count:
+        # build unit only if their number less than number of cities and less than 110 (to prevent too high lags)
+        if label == 0 and unit_count < player.city_tile_count and unit_count < 110:
             unit_count += 1
             res = call_func(city_tile, *act)
         elif label == 1 and not player.researched_uranium():
@@ -350,7 +346,8 @@ def agent(observation, configuration):
     # Unit Actions
     dest = []
     for unit in player.units:
-        if unit.can_act() and (game_state.turn % 40 < 30 or (not in_city(unit.pos) and not on_res_tile(unit.pos))):
+#         if unit.can_act() and (game_state.turn % 40 < 30 or (not in_city(unit.pos) and not on_res_tile(unit.pos))):
+        if unit.can_act() and (game_state.turn % 40 < 30 or not in_city(unit.pos)):
             state = make_input(observation, unit.id)
             with torch.no_grad():
                 p = model(torch.from_numpy(state).unsqueeze(0))
