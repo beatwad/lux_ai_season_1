@@ -58,7 +58,7 @@ def find_prev_coords(prev_units, unit_id):
             break
     return x, y
             
-# Input for Neural Network for workers
+# Input for Neural Network for units
 def make_input(obs, unit_id):
     width, height = obs['width'], obs['height']
     x_shift = (32 - width) // 2
@@ -146,7 +146,7 @@ def make_input(obs, unit_id):
     b[25, :] = obs['step'] / 360
     # Day / Night
     b[26, :] = 1 if obs['step'] % 40 < 30 else 0
-    # Map Size + tiles where unit can't move (all other units and adversarial cities)
+    # Map Size
     b[27, x_shift:32 - x_shift, y_shift:32 - y_shift] = 1
         
     return b
@@ -346,8 +346,7 @@ def agent(observation, configuration):
     # Unit Actions
     dest = []
     for unit in player.units:
-#         if unit.can_act() and (game_state.turn % 40 < 30 or (not in_city(unit.pos) and not on_res_tile(unit.pos))):
-        if unit.can_act() and (game_state.turn % 40 < 30 or not in_city(unit.pos)):
+        if unit.can_act() and (game_state.turn % 40 < 30 or (not in_city(unit.pos) and not on_res_tile(unit.pos))):
             state = make_input(observation, unit.id)
             with torch.no_grad():
                 p = model(torch.from_numpy(state).unsqueeze(0))
