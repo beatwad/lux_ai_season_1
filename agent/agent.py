@@ -5,7 +5,7 @@ import torch
 from math import inf
 from lux.game import Game
 
-path = '/kaggle_simulations/agent' if os.path.exists('/kaggle_simulations') else '.' # change to 'agent' for tests
+path = '/kaggle_simulations/agent' if os.path.exists('/kaggle_simulations') else 'agent' # change to 'agent' for tests
 model = torch.jit.load(f'{path}/model.pth')
 model.eval()
 model_city = torch.jit.load(f'{path}/model_city.pth')
@@ -58,7 +58,7 @@ def find_prev_coords(prev_units, unit_id):
             break
     return x, y
             
-# Input for Neural Network for units
+# Input for Neural Network for workers
 def make_input(obs, unit_id):
     width, height = obs['width'], obs['height']
     x_shift = (32 - width) // 2
@@ -66,7 +66,7 @@ def make_input(obs, unit_id):
 
     cities = {}
     
-    b = np.zeros((28, 32, 32), dtype=np.float32)
+    b = np.zeros((27, 32, 32), dtype=np.float32)
     
     prev_units = find_units_from_previous_obs(obs, x_shift, y_shift)
     x_u, y_u = prev_units[0][unit_id][0], prev_units[0][unit_id][1]
@@ -128,7 +128,7 @@ def make_input(obs, unit_id):
             b[{'wood': 17, 'coal': 18, 'uranium': 19}[r_type], x, y] = amt / 800
             b[20, x, y] = access
             b[21, x, y] = manhattan_distance(x_u, y_u, x, y)/((width-1) + (height-1))
-        elif input_identifier == 'rp':  # 21:22
+        elif input_identifier == 'rp':  # 22:23
             # Research Points
             team = int(strs[1])
             rp = int(strs[2])
@@ -144,10 +144,10 @@ def make_input(obs, unit_id):
     b[24, :] = obs['step'] % 40 / 40
     # Turns
     b[25, :] = obs['step'] / 360
-    # Day / Night
-    b[26, :] = 1 if obs['step'] % 40 < 30 else 0
+    # Day/Night Flag
+#     b[26, :] = 1 if obs['step'] % 40 < 30 else 0
     # Map Size
-    b[27, x_shift:32 - x_shift, y_shift:32 - y_shift] = 1
+    b[26, x_shift:32 - x_shift, y_shift:32 - y_shift] = 1
         
     return b
 
