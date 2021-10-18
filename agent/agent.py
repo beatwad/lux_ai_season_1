@@ -5,13 +5,11 @@ import torch
 from math import inf
 from lux.game import Game
 
-path = '/kaggle_simulations/agent' if os.path.exists('/kaggle_simulations') else 'agent' # change to 'agent' for tests
+path = '/kaggle_simulations/agent' if os.path.exists('/kaggle_simulations') else '.' # change to 'agent' for tests
 model = torch.jit.load(f'{path}/model.pth')
 model.eval()
 model_city = torch.jit.load(f'{path}/model_city.pth')
 model_city.eval()
-
-from math import inf
 
 def manhattan_distance(x1, y1, x2, y2):
     return (abs(x2-x1) + abs(y2-y1))
