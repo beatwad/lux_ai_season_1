@@ -241,19 +241,25 @@ def get_game_state(observation):
     return game_state
 
 
-# check if unit is in city or not
+# check if unit is in city
 def in_city(pos):    
     try:
         city = game_state.map.get_cell_by_pos(pos).citytile
-        return city is not None and city.team == game_state.id
+        return city is not None and city.team == game_state.id 
     except:
         return False
-    
-# check if unit is in city or not
-def on_res_tile(pos):    
-    res = game_state.map.get_cell_by_pos(pos).has_resource()
-    print(f'pos - {pos}, res - {res}')
-    return res
+
+# check if city will survive the night
+def city_will_survive(pos):    
+    try:
+        city_id = game_state.map.get_cell_by_pos(pos).citytile.cityid
+    except:
+        return False
+    if city_id in player.cities:
+        city = player.cities[city_id]
+        if city.fuel > (city.get_light_upkeep()) * 10:
+            return True
+    return False
     
 # check if unit has enough time and space to build a city
 def build_city_is_possible(unit, pos):    
@@ -347,7 +353,7 @@ def agent(observation, configuration):
     # Unit Actions
     dest = []
     for unit in player.units:
-        if unit.can_act() and (game_state.turn % 40 < 30 or (not in_city(unit.pos))):
+        if unit.can_act() and (game_state.turn % 40 < 30 or (not in_city(unit.pos)) or (not city_will_survive(unit.pos))):
             state = make_input(observation, unit.id)
             with torch.no_grad():
                 p = model(torch.from_numpy(state).unsqueeze(0))
