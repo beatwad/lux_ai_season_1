@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from lux.game import Game
 
-path = '/kaggle_simulations/agent' if os.path.exists('/kaggle_simulations') else 'agent' # change to 'agent' for tests
+path = '/kaggle_simulations/agent' if os.path.exists('/kaggle_simulations') else '.' # change to 'agent' for tests
 model = torch.jit.load(f'{path}/model.pth')
 model.eval()
 model_city = torch.jit.load(f'{path}/model_city.pth')
@@ -249,12 +249,6 @@ def in_city(pos):
     except:
         return False
     
-# check if unit is in city or not
-def on_res_tile(pos):    
-    res = game_state.map.get_cell_by_pos(pos).has_resource()
-    print(f'pos - {pos}, res - {res}')
-    return res
-    
 # check if unit has enough time and space to build a city
 def build_city_is_possible(unit, pos):    
     global game_state
@@ -347,7 +341,7 @@ def agent(observation, configuration):
     # Unit Actions
     dest = []
     for unit in player.units:
-        if unit.can_act() and (game_state.turn % 40 < 30 or (not in_city(unit.pos) and not on_res_tile(unit.pos))):
+        if unit.can_act() and (game_state.turn % 40 < 30 or (not in_city(unit.pos))):
             state = make_input(observation, unit.id)
             with torch.no_grad():
                 p = model(torch.from_numpy(state).unsqueeze(0))
