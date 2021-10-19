@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import torch
+from math import inf
 from lux.game import Game
 
 path = '/kaggle_simulations/agent' if os.path.exists('/kaggle_simulations') else '.' # change to 'agent' for tests
@@ -9,15 +10,10 @@ model.eval()
 model_city = torch.jit.load(f'{path}/model_city.pth')
 model_city.eval()
 
-# Input for Neural Network for units
-def make_input(obs, unit_id):
-    width, height = obs['width'], obs['height']
-    x_shift = (32 - width) // 2
-    y_shift = (32 - height) // 2
-    cities = {}
-    
-    b = np.zeros((20, 32, 32), dtype=np.float32)
-    
+def manhattan_distance(x1, y1, x2, y2):
+    return (abs(x2-x1) + abs(y2-y1))
+
+def find_user_coords(obs, unit_id, x_shift, y_shift):
     for update in obs['updates']:
         strs = update.split(' ')
         input_identifier = strs[0]
@@ -25,48 +21,98 @@ def make_input(obs, unit_id):
         if input_identifier == 'u':
             x = int(strs[4]) + x_shift
             y = int(strs[5]) + y_shift
+            if strs[3] == unit_id:
+                return x, y
+    return None, None
+
+def find_closest(x, y, coord_list, width, height):
+    min_dist = inf
+    min_coords = [None, None]
+    for i, j in coord_list:
+        dist = manhattan_distance(x, y, i, j, width, height)
+        if dist < min_dist:
+            min_dist = dist
+            min_coords = [i, j]
+    return min_coords
+        
+
+# Input for Neural Network for workers
+def make_input(obs, unit_id):
+    width, height = obs['width'], obs['height']
+    x_shift = (32 - width) // 2
+    y_shift = (32 - height) // 2
+    cities = {}
+    
+    b = np.zeros((25, 32, 32), dtype=np.float32)
+    
+    x_c, y_c = find_user_coords(obs, unit_id, x_shift, y_shift)
+    
+    for update in obs['updates']:
+        strs = update.split(' ')
+        input_identifier = strs[0]
+        my_rp = 0
+        
+        city_tiles = []
+        resources = []
+        
+        if input_identifier == 'u':
+            x = int(strs[4]) + x_shift
+            y = int(strs[5]) + y_shift
             wood = int(strs[7])
             coal = int(strs[8])
             uranium = int(strs[9])
-            if unit_id == strs[3]:
+            if strs[3] == unit_id: # 0:1
                 # Position and Cargo
                 b[:2, x, y] = (
                     1,
                     (wood + coal + uranium) / 100
                 )
-            else:
+            else:                  # 2:9
                 # Units
                 team = int(strs[2])
                 cooldown = float(strs[6])
-                idx = 2 + (team - obs['player']) % 2 * 3
-                b[idx:idx + 3, x, y] = (
+                idx = 2 + (team - obs['player']) % 2 * 4
+                m_dist = manhattan_distance(x_c, y_c, x, y)
+#                 print(f'm_dist - {m_dist}, x_u - {x_c}, y_u - {y_c}, x - {x}, y - {y}, width - {width}, height - {height}')
+                b[idx:idx + 4, x, y] = (
                     1,
                     cooldown / 6,
-                    (wood + coal + uranium) / 100
+                    (wood + coal + uranium) / 100,
+                    m_dist/((width-1) + (height-1))
                 )
-        elif input_identifier == 'ct':
+        elif input_identifier == 'ct':  # 10:15
             # CityTiles
             team = int(strs[1])
             city_id = strs[2]
             x = int(strs[3]) + x_shift
             y = int(strs[4]) + y_shift
-            idx = 8 + (team - obs['player']) % 2 * 2
-            b[idx:idx + 2, x, y] = (
+            idx = 9 + (team - obs['player']) % 2 * 3
+            m_dist = manhattan_distance(x_c, y_c, x, y)
+#             print(f'm_dist - {m_dist}, x_u - {x_c}, y_u - {y_c}, x - {x}, y - {y}')
+            b[idx:idx + 3, x, y] = (
                 1,
-                cities[city_id]
+                cities[city_id],
+                m_dist/((width-1) + (height-1))
             )
-        elif input_identifier == 'r':
+            city_tiles.append([x, y])
+        elif input_identifier == 'r':  # 16:19
             # Resources
             r_type = strs[1]
             x = int(strs[2]) + x_shift
             y = int(strs[3]) + y_shift
             amt = int(float(strs[4]))
-            b[{'wood': 12, 'coal': 13, 'uranium': 14}[r_type], x, y] = amt / 800
+            access_level = {'wood': 0, 'coal': 50, 'uranium': 200}[r_type]
+            access = 0 if my_rp < access_level else 1
+#             print(f'access_level - {access_level}, access - {access}, my_rp - {my_rp}')
+            b[{'wood': 16, 'coal': 17, 'uranium': 18}[r_type], x, y] = amt / 800
+            b[19, x, y] = access
+            resources.append([x, y])
         elif input_identifier == 'rp':
             # Research Points
             team = int(strs[1])
             rp = int(strs[2])
-            b[15 + (team - obs['player']) % 2, :] = min(rp, 200) / 200
+            my_rp = rp if team == obs['player'] else my_rp
+            b[20 + (team - obs['player']) % 2, :] = min(rp, 200) / 200
         elif input_identifier == 'c':
             # Cities
             city_id = strs[2]
@@ -75,11 +121,11 @@ def make_input(obs, unit_id):
             cities[city_id] = min(fuel / lightupkeep, 10) / 10
     
     # Day/Night Cycle
-    b[17, :] = obs['step'] % 40 / 40
+    b[22, :] = obs['step'] % 40 / 40
     # Turns
-    b[18, :] = obs['step'] / 360
+    b[23, :] = obs['step'] / 360
     # Map Size
-    b[19, x_shift:32 - x_shift, y_shift:32 - y_shift] = 1
+    b[24, x_shift:32 - x_shift, y_shift:32 - y_shift] = 1
 
     return b
 
@@ -266,24 +312,14 @@ def agent(observation, configuration):
     for city in player.cities.values():
         for city_tile in city.citytiles:
             if city_tile.can_act():
-                # at first game stages try to produce maximum amount of agents and research point
-                if game_state.turn < 60:
-                    if unit_count < player.city_tile_count: 
-                        actions.append(city_tile.build_worker())
-                        unit_count += 1
-                    elif not player.researched_uranium():
-                        actions.append(city_tile.research())
-                        player.research_points += 1
-                # then follow NN strategy
-                else:
-                    state = make_city_input(observation, [city_tile.pos.x, city_tile.pos.y])
-                    with torch.no_grad():
-                        p = model_city(torch.from_numpy(state).unsqueeze(0))
+                state = make_city_input(observation, [city_tile.pos.x, city_tile.pos.y])
+                with torch.no_grad():
+                    p = model_city(torch.from_numpy(state).unsqueeze(0))
 
-                    policy = p.squeeze(0).numpy()
+                policy = p.squeeze(0).numpy()
 
-                    action, unit_count = get_city_action(policy, city_tile, unit_count)
-                    if action:
-                        actions.append(action)
+                action, unit_count = get_city_action(policy, city_tile, unit_count)
+                if action:
+                    actions.append(action)
     
     return actions

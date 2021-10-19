@@ -1,3 +1,3 @@
-timeout 4h lux-ai-2021 --tournament --rankSystem wins --storeReplay false --storeLogs false --maxConcurrentMatches 1 agent/main.py agent_simple/main.py submission_v4/main.py
+timeout 4h lux-ai-2021 --tournament --rankSystem wins --storeReplay false --storeLogs false --maxConcurrentMatches 1 agent/main.py  best_agent/main.py
 
 lux-ai-2021 --seed=100 agent/main.py main.py

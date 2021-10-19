@@ -2,7 +2,6 @@ import os
 import json
 import numpy as np
 import torch
-from math import inf
 from lux.game import Game
 
 path = '/kaggle_simulations/agent' if os.path.exists('/kaggle_simulations') else 'agent' # change to 'agent' for tests
@@ -66,7 +65,7 @@ def make_input(obs, unit_id):
 
     cities = {}
     
-    b = np.zeros((27, 32, 32), dtype=np.float32)
+    b = np.zeros((28, 32, 32), dtype=np.float32)
     
     prev_units = find_units_from_previous_obs(obs, x_shift, y_shift)
     x_u, y_u = prev_units[0][unit_id][0], prev_units[0][unit_id][1]
@@ -145,9 +144,9 @@ def make_input(obs, unit_id):
     # Turns
     b[25, :] = obs['step'] / 360
     # Day/Night Flag
-#     b[26, :] = 1 if obs['step'] % 40 < 30 else 0
+    b[26, :] = 1 if obs['step'] % 40 < 30 else 0
     # Map Size
-    b[26, x_shift:32 - x_shift, y_shift:32 - y_shift] = 1
+    b[27, x_shift:32 - x_shift, y_shift:32 - y_shift] = 1
         
     return b
 
@@ -158,7 +157,7 @@ def make_city_input(obs, city_coord):
     y_shift = (32 - height) // 2
     cities = {}
     
-    b = np.zeros((20, 32, 32), dtype=np.float32)
+    b = np.zeros((21, 32, 32), dtype=np.float32)
     
     for update in obs['updates']:
         strs = update.split(' ')
@@ -218,8 +217,10 @@ def make_city_input(obs, city_coord):
     b[17, :] = obs['step'] % 40 / 40
     # Turns
     b[18, :] = obs['step'] / 360
+    # Day/Night Flag
+    b[19, :] = 1 if obs['step'] % 40 < 30 else 0
     # Map Size
-    b[19, x_shift:32 - x_shift, y_shift:32 - y_shift] = 1
+    b[20, x_shift:32 - x_shift, y_shift:32 - y_shift] = 1
 
     return b
 
@@ -297,8 +298,8 @@ def get_city_action(policy, city_tile, unit_count):
     
     for label in np.argsort(policy)[::-1]:
         act = city_actions[label]
-        # build unit only if their number less than number of cities and less than 110 (to prevent too high lags)
-        if label == 0 and unit_count < player.city_tile_count and unit_count < 110:
+        # build unit only if their number less than number of cities and less than 100 (to prevent too high lags)
+        if label == 0 and unit_count < player.city_tile_count and unit_count < 100:
             unit_count += 1
             res = call_func(city_tile, *act)
         elif label == 1 and not player.researched_uranium():

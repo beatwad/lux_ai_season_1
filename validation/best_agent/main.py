@@ -2,7 +2,7 @@ from typing import Dict
 import sys
 from agent import agent
 if __name__ == "__main__":
-    
+
     def read_input():
         """
         Reads input from stdin
@@ -24,11 +24,13 @@ if __name__ == "__main__":
     while True:
         inputs = read_input()
         observation["updates"].append(inputs)
-        
-        if step == 0:
-            player_id = int(observation["updates"][0])
-            observation.player = player_id
+
         if inputs == "D_DONE":
+            if step == 0:  # the codefix
+                player_id = int(observation["updates"][0])
+                observation.player = player_id
+                observation["player"] = player_id
+                observation["width"], observation["height"] = map(int, observation["updates"][1].split())
             actions = agent(observation, None)
             observation["updates"] = []
             step += 1
