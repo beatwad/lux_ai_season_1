@@ -291,7 +291,7 @@ def get_unit_action(policy, unit, dest):
     for label in np.argsort(policy)[::-1]:
         act = unit_actions[label]
         pos = unit.pos.translate(act[-1], 1) or unit.pos
-        if label == 4 and not build_city_is_possible(unit, pos):
+        if label == 4 and not build_city_is_possible(unit, pos): # try to remove this
             return unit.move('c'), unit.pos
         if pos not in dest or in_city(pos):
             return call_func(unit, *act), pos      
@@ -353,7 +353,7 @@ def agent(observation, configuration):
     # Unit Actions
     dest = []
     for unit in player.units:
-        if unit.can_act() and (game_state.turn % 40 < 30 or (not in_city(unit.pos)) or (not city_will_survive(unit.pos))):
+        if unit.can_act() and (game_state.turn % 40 < 30 or (not in_city(unit.pos))): # try to remove this
             state = make_input(observation, unit.id)
             with torch.no_grad():
                 p = model(torch.from_numpy(state).unsqueeze(0))
