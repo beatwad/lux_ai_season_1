@@ -1,5 +1,6 @@
 import os
 import json
+import threading
 import numpy as np
 import torch
 from lux.game import Game
@@ -291,7 +292,7 @@ def get_unit_action(policy, unit, dest):
     for label in np.argsort(policy)[::-1]:
         act = unit_actions[label]
         pos = unit.pos.translate(act[-1], 1) or unit.pos
-        if label == 4 and not build_city_is_possible(unit, pos):
+        if label == 4 and not build_city_is_possible(unit, pos): # try to remove this
             return unit.move('c'), unit.pos
         if pos not in dest or in_city(pos):
             return call_func(unit, *act), pos      
@@ -319,10 +320,13 @@ def get_city_action(policy, city_tile, unit_count):
 def agent(observation, configuration):
     global game_state
     global player
+    global actions
+    global dest
     
     game_state = get_game_state(observation)    
     player = game_state.players[observation.player]
     actions = [] 
+    dest = []
     prev_obs = dict()
     
     with open(f'{path}/tmp.json') as json_file:
@@ -351,32 +355,57 @@ def agent(observation, configuration):
         open(f'{path}/tmp.json', 'w+').close()
     
     # Unit Actions
-    dest = []
-    for unit in player.units:
-        if unit.can_act() and (game_state.turn % 40 < 30 or (not in_city(unit.pos)) or (not city_will_survive(unit.pos))):
-            state = make_input(observation, unit.id)
-            with torch.no_grad():
-                p = model(torch.from_numpy(state).unsqueeze(0))
-
-            policy = p.squeeze(0).numpy()
-
-            action, pos = get_unit_action(policy, unit, dest)
-            actions.append(action)
-            dest.append(pos)
-    
-    # City Actions
-    unit_count = len(player.units)
-    for city in player.cities.values():
-        for city_tile in city.citytiles:
-            if city_tile.can_act():
-                state = make_city_input(observation, [city_tile.pos.x, city_tile.pos.y])
+    def unit_actions(idx, player, game_state, model, observation):
+        global actions
+        global dest
+        if idx < len(player.units):
+            unit = player.units[idx]
+            if unit.can_act() and (game_state.turn % 40 < 30 or (not in_city(unit.pos))):
+                state = make_input(observation, unit.id)
                 with torch.no_grad():
-                    p = model_city(torch.from_numpy(state).unsqueeze(0))
+                    p = model(torch.from_numpy(state).unsqueeze(0))
 
                 policy = p.squeeze(0).numpy()
 
-                action, unit_count = get_city_action(policy, city_tile, unit_count)
-                if action:
-                    actions.append(action)
+                action, pos = get_unit_action(policy, unit, dest)
+                actions.append(action)
+                dest.append(pos)
+
+    
+    thread_num = 4
+    
+    # make work of NNs parallel
+    for i in range(len(player.units)//thread_num + 1):
+        threads = [threading.Thread(target=unit_actions, 
+                                    args=((thread_num*i)+j, 
+                                    player, 
+                                    game_state, 
+                                    model,
+                                    observation)) for j in range(thread_num)]
+        for t in threads: 
+            t.start()
+        for t in threads:
+            t.join()
+        
+    # City Actions
+    def city_actions(city_tile, game_state, model, observation, unit_count):
+        global actions
+        global dest
+        if city_tile.can_act():
+            state = make_city_input(observation, [city_tile.pos.x, city_tile.pos.y])
+            with torch.no_grad():
+                p = model_city(torch.from_numpy(state).unsqueeze(0))
+
+            policy = p.squeeze(0).numpy()
+
+            action, unit_count = get_city_action(policy, city_tile, unit_count)
+            if action:
+                actions.append(action)    
+
+    unit_count = len(player.units)
+    for city in player.cities.values():
+        for city_tile in city.citytiles:
+            city_actions(city_tile, game_state, model, observation, unit_count)
+            
     
     return actions

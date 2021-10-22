@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from lux.game import Game
 
-path = '/kaggle_simulations/agent' if os.path.exists('/kaggle_simulations') else 'agent' # change to 'agent' for tests
+path = '/kaggle_simulations/agent' if os.path.exists('/kaggle_simulations') else '.' # change to 'agent' for tests
 model = torch.jit.load(f'{path}/model.pth')
 model.eval()
 model_city = torch.jit.load(f'{path}/model_city.pth')
@@ -305,8 +305,8 @@ def get_city_action(policy, city_tile, unit_count):
     
     for label in np.argsort(policy)[::-1]:
         act = city_actions[label]
-        # build unit only if their number less than number of cities and less than 100 (to prevent too high lags)
-        if label == 0 and unit_count < player.city_tile_count and unit_count < 100:
+        # build unit only if their number less than number of cities
+        if label == 0 and unit_count < player.city_tile_count and unit_count < 80:
             unit_count += 1
             res = call_func(city_tile, *act)
         elif label == 1 and not player.researched_uranium():
@@ -355,37 +355,22 @@ def agent(observation, configuration):
         open(f'{path}/tmp.json', 'w+').close()
     
     # Unit Actions
-    def unit_actions(idx, player, game_state, model, observation):
+    def unit_actions(unit, player, game_state, model, observation):
         global actions
         global dest
-        if idx < len(player.units):
-            unit = player.units[idx]
-            if unit.can_act() and (game_state.turn % 40 < 30 or (not in_city(unit.pos))):
-                state = make_input(observation, unit.id)
-                with torch.no_grad():
-                    p = model(torch.from_numpy(state).unsqueeze(0))
+        if unit.can_act() and (game_state.turn % 40 < 30 or (not in_city(unit.pos))):
+            state = make_input(observation, unit.id)
+            with torch.no_grad():
+                p = model(torch.from_numpy(state).unsqueeze(0))
 
-                policy = p.squeeze(0).numpy()
+            policy = p.squeeze(0).numpy()
 
-                action, pos = get_unit_action(policy, unit, dest)
-                actions.append(action)
-                dest.append(pos)
-
-    
-    thread_num = 4
-    
-    # make work of NNs parallel
-    for i in range(len(player.units)//thread_num + 1):
-        threads = [threading.Thread(target=unit_actions, 
-                                    args=((thread_num*i)+j, 
-                                    player, 
-                                    game_state, 
-                                    model,
-                                    observation)) for j in range(thread_num)]
-        for t in threads: 
-            t.start()
-        for t in threads:
-            t.join()
+            action, pos = get_unit_action(policy, unit, dest)
+            actions.append(action)
+            dest.append(pos)
+            
+    for unit in player.units:
+        unit_actions(unit, player, game_state, model, observation)
         
     # City Actions
     def city_actions(city_tile, game_state, model, observation, unit_count):
