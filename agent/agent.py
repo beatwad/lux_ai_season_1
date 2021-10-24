@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from lux.game import Game
 
-path = '/kaggle_simulations/agent' if os.path.exists('/kaggle_simulations') else '.' # change to 'agent' for tests
+path = '/kaggle_simulations/agent' if os.path.exists('/kaggle_simulations') else 'agent' # change to 'agent' for tests
 model = torch.jit.load(f'{path}/model.pth')
 model.eval()
 model_city = torch.jit.load(f'{path}/model_city.pth')
@@ -23,7 +23,11 @@ def find_units_from_previous_obs(obs, x_shift, y_shift):
     updates_lag_2 = obs['updates_lag_2']
     updates_lag_3 = obs['updates_lag_3']
     updates_lag_4 = obs['updates_lag_4']
-    prev_updates = [updates, updates_lag_1, updates_lag_2, updates_lag_3, updates_lag_4]
+    updates_lag_5 = obs['updates_lag_5']
+    updates_lag_6 = obs['updates_lag_6']
+    updates_lag_7 = obs['updates_lag_7']
+    prev_updates = [updates, updates_lag_1, updates_lag_2, updates_lag_3, 
+                    updates_lag_4, updates_lag_5, updates_lag_6, updates_lag_7]
     prev_units = list()
     for prev_update in prev_updates:
         units = dict()
@@ -45,7 +49,7 @@ def find_units_from_previous_obs(obs, x_shift, y_shift):
 
 def find_prev_coords(prev_units, unit_id):
     # find previous coordinates of unit by ananlyzing its cooldown
-    x, y = None, None
+    x, y = [None, None], [None, None]
     for i in range(len(prev_units)-1):
         if unit_id in prev_units[i] and unit_id in prev_units[i+1]:
             cooldown = prev_units[i][unit_id][0]
@@ -53,7 +57,12 @@ def find_prev_coords(prev_units, unit_id):
             prev_y = prev_units[i+1][unit_id][1]
             prev_cooldown = prev_units[i+1][unit_id][2]
             if cooldown > 0 and prev_cooldown == 0:
-                return prev_x, prev_y
+                if x[1] and y[1]:
+                    return x, y
+                if not x[0] and not y[0]:
+                    x[0], y[0] = prev_x,prev_y
+                else:
+                    x[1], y[1] = prev_x,prev_y
         else:
             break
     return x, y
@@ -66,7 +75,7 @@ def make_input(obs, unit_id):
 
     cities = {}
     
-    b = np.zeros((28, 32, 32), dtype=np.float32)
+    b = np.zeros((29, 32, 32), dtype=np.float32)
     
     prev_units = find_units_from_previous_obs(obs, x_shift, y_shift)
     x_u, y_u = prev_units[0][unit_id][0], prev_units[0][unit_id][1]
@@ -89,14 +98,16 @@ def make_input(obs, unit_id):
                     (wood + coal + uranium) / 100
                 )
                 prev_x, prev_y = find_prev_coords(prev_units, unit_id)
-                if not prev_x and not prev_y:
-                    prev_x, prev_y = x, y
-                b[2, prev_x, prev_y] = 1
-            else:                  # 3:10
+                if not prev_x[0] and not prev_y[0]:
+                    prev_x[0], prev_y[0] = x, y
+                    prev_x[1], prev_y[1] = x, y
+                b[2, prev_x[0], prev_y[0]] = 1
+                b[3, prev_x[1], prev_y[1]] = 1
+            else:                  # 4:11
                 # Units
                 team = int(strs[2])
                 cooldown = float(strs[6])
-                idx = 3 + (team - obs['player']) % 2 * 4
+                idx = 4 + (team - obs['player']) % 2 * 4
                 m_dist = manhattan_distance(x_u, y_u, x, y)
                 b[idx:idx + 4, x, y] = (
                     1,
@@ -104,20 +115,20 @@ def make_input(obs, unit_id):
                     (wood + coal + uranium) / 100,
                     m_dist/((width-1) + (height-1))
                 )
-        elif input_identifier == 'ct':  # 11:16
+        elif input_identifier == 'ct':  # 12:17
             # CityTiles
             team = int(strs[1])
             city_id = strs[2]
             x = int(strs[3]) + x_shift
             y = int(strs[4]) + y_shift
-            idx = 11 + (team - obs['player']) % 2 * 3
+            idx = 12 + (team - obs['player']) % 2 * 3
             m_dist = manhattan_distance(x_u, y_u, x, y)
             b[idx:idx + 3, x, y] = (
                 1,
                 cities[city_id],
                 m_dist/((width-1) + (height-1))
             )
-        elif input_identifier == 'r':  # 17:20
+        elif input_identifier == 'r':  # 18:21
             # Resources
             r_type = strs[1]
             x = int(strs[2]) + x_shift
@@ -125,15 +136,15 @@ def make_input(obs, unit_id):
             amt = int(float(strs[4]))
             access_level = {'wood': 0, 'coal': 50, 'uranium': 200}[r_type]
             access = 0 if my_rp < access_level else 1
-            b[{'wood': 17, 'coal': 18, 'uranium': 19}[r_type], x, y] = amt / 800
-            b[20, x, y] = access
-            b[21, x, y] = manhattan_distance(x_u, y_u, x, y)/((width-1) + (height-1))
-        elif input_identifier == 'rp':  # 22:23
+            b[{'wood': 18, 'coal': 19, 'uranium': 20}[r_type], x, y] = amt / 800
+            b[21, x, y] = access
+            b[22, x, y] = manhattan_distance(x_u, y_u, x, y)/((width-1) + (height-1))
+        elif input_identifier == 'rp':  # 23:24
             # Research Points
             team = int(strs[1])
             rp = int(strs[2])
             my_rp = rp if team == obs['player'] else my_rp
-            b[22 + (team - obs['player']) % 2, :] = min(rp, 200) / 200
+            b[23 + (team - obs['player']) % 2, :] = min(rp, 200) / 200
         elif input_identifier == 'c':
             # Cities
             city_id = strs[2]
@@ -141,13 +152,13 @@ def make_input(obs, unit_id):
             lightupkeep = float(strs[4])
             cities[city_id] = min(fuel / lightupkeep, 10) / 10
     # Day/Night Cycle
-    b[24, :] = obs['step'] % 40 / 40
+    b[25, :] = obs['step'] % 40 / 40
     # Turns
-    b[25, :] = obs['step'] / 360
+    b[26, :] = obs['step'] / 360
     # Day/Night Flag
-    b[26, :] = 1 if obs['step'] % 40 < 30 else 0
+    b[27, :] = 1 if obs['step'] % 40 < 30 else 0
     # Map Size
-    b[27, x_shift:32 - x_shift, y_shift:32 - y_shift] = 1
+    b[28, x_shift:32 - x_shift, y_shift:32 - y_shift] = 1
         
     return b
 
@@ -306,7 +317,7 @@ def get_city_action(policy, city_tile, unit_count):
     for label in np.argsort(policy)[::-1]:
         act = city_actions[label]
         # build unit only if their number less than number of cities
-        if label == 0 and unit_count < player.city_tile_count and unit_count < 80:
+        if label == 0 and unit_count < player.city_tile_count and unit_count < 100:
             unit_count += 1
             res = call_func(city_tile, *act)
         elif label == 1 and not player.researched_uranium():
@@ -337,18 +348,27 @@ def agent(observation, configuration):
             prev_obs['updates_lag_2'] = None
             prev_obs['updates_lag_3'] = None
             prev_obs['updates_lag_4'] = None
+            prev_obs['updates_lag_5'] = None
+            prev_obs['updates_lag_6'] = None
+            prev_obs['updates_lag_7'] = None
             
+    observation['updates_lag_7'] = prev_obs['updates_lag_7']
+    observation['updates_lag_6'] = prev_obs['updates_lag_6']
+    observation['updates_lag_5'] = prev_obs['updates_lag_5']
     observation['updates_lag_4'] = prev_obs['updates_lag_4']
     observation['updates_lag_3'] = prev_obs['updates_lag_3']
     observation['updates_lag_2'] = prev_obs['updates_lag_2']
     observation['updates_lag_1'] = prev_obs['updates_lag_1']
     
+    prev_obs['updates_lag_7'] = prev_obs['updates_lag_6']
+    prev_obs['updates_lag_6'] = prev_obs['updates_lag_5']
+    prev_obs['updates_lag_5'] = prev_obs['updates_lag_4']
     prev_obs['updates_lag_4'] = prev_obs['updates_lag_3']
     prev_obs['updates_lag_3'] = prev_obs['updates_lag_2']
     prev_obs['updates_lag_2'] = prev_obs['updates_lag_1']
     prev_obs['updates_lag_1'] = observation['updates']
     
-    if game_state.turn < 359:
+    if game_state.turn < 360:
         with open(f'{path}/tmp.json', 'w+') as json_file:
             json.dump(prev_obs, json_file)
     else:
@@ -358,7 +378,7 @@ def agent(observation, configuration):
     def unit_actions(unit, player, game_state, model, observation):
         global actions
         global dest
-        if unit.can_act() and (game_state.turn % 40 < 30 or (not in_city(unit.pos))):
+        if unit.can_act():
             state = make_input(observation, unit.id)
             with torch.no_grad():
                 p = model(torch.from_numpy(state).unsqueeze(0))
@@ -377,15 +397,19 @@ def agent(observation, configuration):
         global actions
         global dest
         if city_tile.can_act():
-            state = make_city_input(observation, [city_tile.pos.x, city_tile.pos.y])
-            with torch.no_grad():
-                p = model_city(torch.from_numpy(state).unsqueeze(0))
+            # on the last step build as many workers as possible to win the game in case of tie
+            if game_state.turn == 359:
+                city_tile.build_worker()
+            else:
+                state = make_city_input(observation, [city_tile.pos.x, city_tile.pos.y])
+                with torch.no_grad():
+                    p = model_city(torch.from_numpy(state).unsqueeze(0))
 
-            policy = p.squeeze(0).numpy()
+                policy = p.squeeze(0).numpy()
 
-            action, unit_count = get_city_action(policy, city_tile, unit_count)
-            if action:
-                actions.append(action)    
+                action, unit_count = get_city_action(policy, city_tile, unit_count)
+                if action:
+                    actions.append(action)    
 
     unit_count = len(player.units)
     for city in player.cities.values():

@@ -2,6 +2,7 @@ import os
 import json
 import numpy as np
 import torch
+from math import inf
 from lux.game import Game
 
 path = '/kaggle_simulations/agent' if os.path.exists('/kaggle_simulations') else '.' # change to 'agent' for tests
@@ -65,7 +66,7 @@ def make_input(obs, unit_id):
 
     cities = {}
     
-    b = np.zeros((28, 32, 32), dtype=np.float32)
+    b = np.zeros((26, 32, 32), dtype=np.float32)
     
     prev_units = find_units_from_previous_obs(obs, x_shift, y_shift)
     x_u, y_u = prev_units[0][unit_id][0], prev_units[0][unit_id][1]
@@ -126,28 +127,26 @@ def make_input(obs, unit_id):
             access = 0 if my_rp < access_level else 1
             b[{'wood': 17, 'coal': 18, 'uranium': 19}[r_type], x, y] = amt / 800
             b[20, x, y] = access
-            b[21, x, y] = manhattan_distance(x_u, y_u, x, y)/((width-1) + (height-1))
-        elif input_identifier == 'rp':  # 22:23
+        elif input_identifier == 'rp':  # 21:22
             # Research Points
             team = int(strs[1])
             rp = int(strs[2])
             my_rp = rp if team == obs['player'] else my_rp
-            b[22 + (team - obs['player']) % 2, :] = min(rp, 200) / 200
+            b[21 + (team - obs['player']) % 2, :] = min(rp, 200) / 200
         elif input_identifier == 'c':
             # Cities
             city_id = strs[2]
             fuel = float(strs[3])
             lightupkeep = float(strs[4])
             cities[city_id] = min(fuel / lightupkeep, 10) / 10
+    
     # Day/Night Cycle
-    b[24, :] = obs['step'] % 40 / 40
+    b[23, :] = obs['step'] % 40 / 40
     # Turns
-    b[25, :] = obs['step'] / 360
-    # Day/Night Flag
-    b[26, :] = 1 if obs['step'] % 40 < 30 else 0
+    b[24, :] = obs['step'] / 360
     # Map Size
-    b[27, x_shift:32 - x_shift, y_shift:32 - y_shift] = 1
-        
+    b[25, x_shift:32 - x_shift, y_shift:32 - y_shift] = 1
+
     return b
 
 # Input for Neural Network for cities
@@ -157,7 +156,7 @@ def make_city_input(obs, city_coord):
     y_shift = (32 - height) // 2
     cities = {}
     
-    b = np.zeros((21, 32, 32), dtype=np.float32)
+    b = np.zeros((20, 32, 32), dtype=np.float32)
     
     for update in obs['updates']:
         strs = update.split(' ')
@@ -217,10 +216,8 @@ def make_city_input(obs, city_coord):
     b[17, :] = obs['step'] % 40 / 40
     # Turns
     b[18, :] = obs['step'] / 360
-    # Day/Night Flag
-    b[19, :] = 1 if obs['step'] % 40 < 30 else 0
     # Map Size
-    b[20, x_shift:32 - x_shift, y_shift:32 - y_shift] = 1
+    b[19, x_shift:32 - x_shift, y_shift:32 - y_shift] = 1
 
     return b
 
@@ -241,25 +238,19 @@ def get_game_state(observation):
     return game_state
 
 
-# check if unit is in city
+# check if unit is in city or not
 def in_city(pos):    
     try:
         city = game_state.map.get_cell_by_pos(pos).citytile
-        return city is not None and city.team == game_state.id 
+        return city is not None and city.team == game_state.id
     except:
         return False
-
-# check if city will survive the night
-def city_will_survive(pos):    
-    try:
-        city_id = game_state.map.get_cell_by_pos(pos).citytile.cityid
-    except:
-        return False
-    if city_id in player.cities:
-        city = player.cities[city_id]
-        if city.fuel > (city.get_light_upkeep()) * 10:
-            return True
-    return False
+    
+# check if unit is in city or not
+def on_res_tile(pos):    
+    res = game_state.map.get_cell_by_pos(pos).has_resource()
+    print(f'pos - {pos}, res - {res}')
+    return res
     
 # check if unit has enough time and space to build a city
 def build_city_is_possible(unit, pos):    
@@ -267,6 +258,8 @@ def build_city_is_possible(unit, pos):
     global player
 
     if game_state.turn % 40 < 30:
+        return True
+    if unit.cargo.wood + unit.cargo.coal*10 + unit.cargo.uranium*40 >= 230:
         return True
     x, y = pos.x, pos.y
     for i, j in ((x-1, y), (x+1, y), (x, y-1), (x, y+1)):
@@ -304,8 +297,7 @@ def get_city_action(policy, city_tile, unit_count):
     
     for label in np.argsort(policy)[::-1]:
         act = city_actions[label]
-        # build unit only if their number less than number of cities and less than 100 (to prevent too high lags)
-        if label == 0 and unit_count < player.city_tile_count and unit_count < 100:
+        if label == 0 and unit_count < player.city_tile_count:
             unit_count += 1
             res = call_func(city_tile, *act)
         elif label == 1 and not player.researched_uranium():
@@ -353,7 +345,7 @@ def agent(observation, configuration):
     # Unit Actions
     dest = []
     for unit in player.units:
-        if unit.can_act() and (game_state.turn % 40 < 30 or (not in_city(unit.pos)) or (not city_will_survive(unit.pos))):
+        if unit.can_act():
             state = make_input(observation, unit.id)
             with torch.no_grad():
                 p = model(torch.from_numpy(state).unsqueeze(0))
