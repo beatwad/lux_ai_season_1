@@ -317,7 +317,7 @@ def get_city_action(policy, city_tile, unit_count):
     for label in np.argsort(policy)[::-1]:
         act = city_actions[label]
         # build unit only if their number less than number of cities
-        if label == 0 and unit_count < player.city_tile_count and unit_count < 100:
+        if label == 0 and unit_count < player.city_tile_count and unit_count < 90:
             unit_count += 1
             res = call_func(city_tile, *act)
         elif label == 1 and not player.researched_uranium():
