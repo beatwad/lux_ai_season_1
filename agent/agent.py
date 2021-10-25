@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from lux.game import Game
 
-path = '/kaggle_simulations/agent' if os.path.exists('/kaggle_simulations') else 'agent' # change to 'agent' for tests
+path = '/kaggle_simulations/agent' if os.path.exists('/kaggle_simulations') else '.' # change to 'agent' for tests
 model = torch.jit.load(f'{path}/model.pth')
 model.eval()
 model_city = torch.jit.load(f'{path}/model_city.pth')
@@ -368,11 +368,11 @@ def agent(observation, configuration):
     prev_obs['updates_lag_2'] = prev_obs['updates_lag_1']
     prev_obs['updates_lag_1'] = observation['updates']
     
-    if game_state.turn < 360:
+    if game_state.turn == 0 or game_state.turn == 359:
+        open(f'{path}/tmp.json', 'w+').close()
+    else:
         with open(f'{path}/tmp.json', 'w+') as json_file:
             json.dump(prev_obs, json_file)
-    else:
-        open(f'{path}/tmp.json', 'w+').close()
     
     # Unit Actions
     def unit_actions(unit, player, game_state, model, observation):
@@ -398,7 +398,7 @@ def agent(observation, configuration):
         global dest
         if city_tile.can_act():
             # on the last step build as many workers as possible to win the game in case of tie
-            if game_state.turn == 359:
+            if game_state.turn == 358:
                 city_tile.build_worker()
             else:
                 state = make_city_input(observation, [city_tile.pos.x, city_tile.pos.y])
