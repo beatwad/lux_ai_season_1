@@ -311,8 +311,9 @@ def get_unit_action(policy, unit, dest):
 
 # translate city policy to action
 city_actions = [('build_worker',), ('research', )]
-def get_city_action(policy, city_tile, unit_count):
+def get_city_action(policy, city_tile):
     global player
+    global unit_count
     
     for label in np.argsort(policy)[::-1]:
         act = city_actions[label]
@@ -325,7 +326,7 @@ def get_city_action(policy, city_tile, unit_count):
             res = call_func(city_tile, *act)
         else:
             res = None
-        return res, unit_count
+        return res
 
 # agent for making actions
 def agent(observation, configuration):
@@ -333,6 +334,7 @@ def agent(observation, configuration):
     global player
     global actions
     global dest
+    global unit_count
     
     game_state = get_game_state(observation)    
     player = game_state.players[observation.player]
@@ -393,9 +395,10 @@ def agent(observation, configuration):
         unit_actions(unit, player, game_state, model, observation)
         
     # City Actions
-    def city_actions(city_tile, game_state, model, observation, unit_count):
+    def city_actions(city_tile, game_state, model, observation):
         global actions
         global dest
+        global unit_count
         if city_tile.can_act():
             # on the last step build as many workers as possible to win the game in case of tie
             if game_state.turn == 358:
@@ -407,14 +410,14 @@ def agent(observation, configuration):
 
                 policy = p.squeeze(0).numpy()
 
-                action, unit_count = get_city_action(policy, city_tile, unit_count)
+                action = get_city_action(policy, city_tile)
                 if action:
                     actions.append(action)    
 
     unit_count = len(player.units)
     for city in player.cities.values():
         for city_tile in city.citytiles:
-            city_actions(city_tile, game_state, model, observation, unit_count)
+            city_actions(city_tile, game_state, model, observation)
             
     
     return actions
