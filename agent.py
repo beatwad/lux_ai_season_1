@@ -101,8 +101,12 @@ def make_input(obs, unit_id):
                 if not prev_x[0] and not prev_y[0]:
                     prev_x[0], prev_y[0] = x, y
                     prev_x[1], prev_y[1] = x, y
-                b[2, prev_x[0], prev_y[0]] = 1
-                b[3, prev_x[1], prev_y[1]] = 1
+                try:
+                    b[2, prev_x[0], prev_y[0]] = 1
+                    b[3, prev_x[1], prev_y[1]] = 1
+                except IndexError:
+                    b[2, x, y] = 1
+                    b[3, x, y] = 1
             else:                  # 4:11
                 # Units
                 team = int(strs[2])
@@ -291,7 +295,7 @@ def build_city_is_possible(unit, pos):
             if city.fuel > (city.get_light_upkeep() + 18) * 10:
                 return True
     return False
-
+    
 
 def call_func(obj, method, args=[]):
     return getattr(obj, method)(*args)
@@ -335,6 +339,7 @@ def agent(observation, configuration):
     global actions
     global dest
     global unit_count
+    global city_count
     
     game_state = get_game_state(observation)    
     player = game_state.players[observation.player]
@@ -401,8 +406,14 @@ def agent(observation, configuration):
         global unit_count
         if city_tile.can_act():
             # on the last step build as many workers as possible to win the game in case of tie
-            if game_state.turn == 358:
-                city_tile.build_worker()
+            if game_state.turn < 40 or unit_count > 80:
+                if unit_count < player.city_tile_count: 
+                    actions.append(city_tile.build_worker())
+                    unit_count += 1
+                elif not player.researched_uranium():
+                    actions.append(city_tile.research())
+                    player.research_points += 1
+            # else follow NN strategy
             else:
                 state = make_city_input(observation, [city_tile.pos.x, city_tile.pos.y])
                 with torch.no_grad():

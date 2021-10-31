@@ -406,11 +406,8 @@ def agent(observation, configuration):
         global unit_count
         if city_tile.can_act():
             # on the last step build as many workers as possible to win the game in case of tie
-            if game_state.turn == 358:
-                city_tile.build_worker()
-            # if number of cities is too high, switch to simplify strategy to prevent too high lags
-            elif player.city_tile_count > 90:
-                if unit_count < 90: 
+            if game_state.turn < 40 or unit_count > 80:
+                if unit_count < player.city_tile_count: 
                     actions.append(city_tile.build_worker())
                     unit_count += 1
                 elif not player.researched_uranium():
