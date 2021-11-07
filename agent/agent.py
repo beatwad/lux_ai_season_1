@@ -385,7 +385,7 @@ def agent(observation, configuration):
     def unit_actions(unit, player, game_state, model, observation):
         global actions
         global dest
-        if unit.can_act():
+        if unit.can_act() and (game_state.turn % 40 < 31 or (not in_city(unit.pos))):
             state = make_input(observation, unit.id)
             with torch.no_grad():
                 p = model(torch.from_numpy(state).unsqueeze(0))
@@ -406,8 +406,11 @@ def agent(observation, configuration):
         global unit_count
         if city_tile.can_act():
             # on the last step build as many workers as possible to win the game in case of tie
-            if game_state.turn < 40 or unit_count > 80:
-                if unit_count < player.city_tile_count: 
+            if game_state.turn > 350:
+                actions.append(city_tile.build_worker())
+            # if number of cities is too high or map size is 12. switch to simplify strategy to prevent too high lags
+            elif player.city_tile_count > 75 or (game_state.map.height == 12 and game_state.turn < 40):
+                if unit_count < 80: 
                     actions.append(city_tile.build_worker())
                     unit_count += 1
                 elif not player.researched_uranium():
