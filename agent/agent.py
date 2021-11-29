@@ -281,10 +281,12 @@ def city_will_survive(pos):
 def build_city_is_possible(unit, pos):    
     global game_state
     global player
-
+    # if it's day, unit can build the city
     if game_state.turn % 40 < 30:
         return True
     x, y = pos.x, pos.y
+    # if it's night time but unit plans to build city than is adjacent to
+    # another city that have enough fuel, it's acceptable
     for i, j in ((x-1, y), (x+1, y), (x, y-1), (x, y+1)):
         try:
             city_id = game_state.map.get_cell(i, j).citytile.cityid
@@ -302,29 +304,33 @@ def call_func(obj, method, args=[]):
 
 
 # translate unit policy to action
-unit_actions = [('move', 'c'), ('move', 'n'), ('move', 's'), ('move', 'w'), ('move', 'e'), ('build_city',)]
+unit_actions = [('move', 'n'), ('move', 's'), ('move', 'w'), ('move', 'e'), ('build_city',)]
 def get_unit_action(policy, unit, dest):
-    for label in np.argsort(policy)[::-1]:
+    labels = np.argsort(policy)[::-1]
+    for label in labels:
         act = unit_actions[label]
         pos = unit.pos.translate(act[-1], 1) or unit.pos
-        if label == 5 and not build_city_is_possible(unit, pos): # try to remove this !!!
+        # build city only if it's possible
+        if label == 4 and not build_city_is_possible(unit, pos):
             return unit.move('c'), unit.pos
+        # move to the next position only if all other units have no plan to move to it
         if pos not in dest or in_city(pos):
             return call_func(unit, *act), pos      
     return unit.move('c'), unit.pos
 
 # translate city policy to action
-city_actions = [('build_worker',), ('research', )]
+city_actions = [('build_worker',), ('research',)]
 def get_city_action(policy, city_tile):
     global player
     global unit_count
-    
-    for label in np.argsort(policy)[::-1]:
+    labels = np.argsort(policy)[::-1]
+    for label in labels:
         act = city_actions[label]
         # build unit only if their number less than number of cities
         if label == 0 and unit_count < player.city_tile_count and unit_count < 80:
             unit_count += 1
             res = call_func(city_tile, *act)
+        # if uranium is researched, don't research anymore
         elif label == 1 and not player.researched_uranium():
             player.research_points += 1
             res = call_func(city_tile, *act)
@@ -347,6 +353,7 @@ def agent(observation, configuration):
     dest = []
     prev_obs = dict()
     
+    # previous observations
     with open(f'{path}/tmp.json') as json_file:
         try:
             prev_obs = json.load(json_file)
@@ -375,7 +382,8 @@ def agent(observation, configuration):
     prev_obs['updates_lag_2'] = prev_obs['updates_lag_1']
     prev_obs['updates_lag_1'] = observation['updates']
     
-    if game_state.turn == 0 or game_state.turn == 359:
+    # file to store previous observations from previous turns
+    if game_state.turn == 0:
         open(f'{path}/tmp.json', 'w+').close()
     else:
         with open(f'{path}/tmp.json', 'w+') as json_file:
@@ -405,11 +413,15 @@ def agent(observation, configuration):
         global dest
         global unit_count
         if city_tile.can_act():
+            # if almost reach 50 or 200 research point mark - try to reach them ASAP
+            if 44 < player.research_points < 50 or 194 < player.research_points < 200:
+                actions.append(city_tile.research())
+                player.research_points += 1
             # on the last step build as many workers as possible to win the game in case of tie
-            if game_state.turn > 350:
+            elif game_state.turn > 350 and game_state.map.height < 32:
                 actions.append(city_tile.build_worker())
-            # if number of cities is too high or map size is 12. switch to simplify strategy to prevent too high lags
-            elif player.city_tile_count > 80: # or (game_state.map.height == 12 and game_state.turn < 40):
+            # if number of cities is too high, switch to simple strategy to prevent exceeding of time limit
+            elif player.city_tile_count > 80:
                 if unit_count < 80: 
                     actions.append(city_tile.build_worker())
                     unit_count += 1
