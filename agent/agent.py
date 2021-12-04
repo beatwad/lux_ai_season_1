@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from lux.game import Game
 
-path = '/kaggle_simulations/agent' if os.path.exists('/kaggle_simulations') else '.' # change to 'agent' for tests
+path = '/kaggle_simulations/agent/besthis' if os.path.exists('/kaggle_simulations') else './besthis' # change to 'agent' for tests
 model = torch.jit.load(f'{path}/model.pth')
 model.eval()
 model_city = torch.jit.load(f'{path}/model_city.pth')
@@ -256,7 +256,28 @@ def get_game_state(observation):
         game_state._update(observation["updates"])
     return game_state
 
+# check if unit don't try to move off map
+def off_map(pos, label):
+    global game_state
+    if pos.y==0 and label==0:
+        return True
+    if pos.y==game_state.map.height-1 and label==1:
+        return True
+    if pos.x==0 and label==2:
+        return True
+    if pos.x==game_state.map.width-1 and label==3:
+        return True
+    return False
+    
 
+# check if tile has resourse
+def has_resource(pos):
+    try:
+        resource = game_state.map.get_cell_by_pos(pos).has_resource()
+        return resource
+    except:
+        return False    
+    
 # check if unit is in city
 def in_city(pos):    
     try:
@@ -264,6 +285,14 @@ def in_city(pos):
         return city is not None and city.team == game_state.id 
     except:
         return False
+    
+# check if tile has opponent city
+def in_opponent_city(pos):    
+    try:
+        city = game_state.map.get_cell_by_pos(pos).citytile
+        return city is not None and not city.team == game_state.id
+    except:
+        return False   
 
 # check if city will survive the night
 def city_will_survive(pos):    
@@ -278,9 +307,15 @@ def city_will_survive(pos):
     return False
     
 # check if unit has enough time and space to build a city
-def build_city_is_possible(unit, pos):    
+def build_city_is_possible(unit, pos, dest):    
     global game_state
     global player
+    # check if there are another cities or resourses or units on this tile
+    if in_city(pos) or in_opponent_city(pos) or has_resource(pos) or pos in dest:
+        return False
+    # check if unit has enough resourses to build city
+    if unit.cargo.wood + unit.cargo.coal + unit.cargo.uranium < 100:
+        return False
     # if it's day, unit can build the city
     if game_state.turn % 40 < 30:
         return True
@@ -311,12 +346,15 @@ def get_unit_action(policy, unit, dest):
         act = unit_actions[label]
         pos = unit.pos.translate(act[-1], 1) or unit.pos
         # build city only if it's possible
-        if label == 4 and not build_city_is_possible(unit, pos):
-            return unit.move('c'), unit.pos
+        if label == 4:
+            if not build_city_is_possible(unit, pos, dest):
+                continue
+            else:
+                return call_func(unit, *act), pos, policy[label]     
         # move to the next position only if all other units have no plan to move to it
         if pos not in dest or in_city(pos):
-            return call_func(unit, *act), pos      
-    return unit.move('c'), unit.pos
+            return call_func(unit, *act), pos, policy[label]     
+    return unit.move('c'), unit.pos, None
 
 # translate city policy to action
 city_actions = [('build_worker',), ('research',)]
@@ -329,27 +367,31 @@ def get_city_action(policy, city_tile):
         # build unit only if their number less than number of cities
         if label == 0 and unit_count < player.city_tile_count and unit_count < 80:
             unit_count += 1
-            res = call_func(city_tile, *act)
+            res = call_func(city_tile, *act), policy[label]     
         # if uranium is researched, don't research anymore
         elif label == 1 and not player.researched_uranium():
             player.research_points += 1
-            res = call_func(city_tile, *act)
+            res = call_func(city_tile, *act), policy[label]     
         else:
-            res = None
+            res = None, None
         return res
 
 # agent for making actions
 def agent(observation, configuration):
     global game_state
     global player
-    global actions
+    global u_actions
+    global u_policies
+    global c_actions
+    global c_policies
     global dest
     global unit_count
     global city_count
     
     game_state = get_game_state(observation)    
     player = game_state.players[observation.player]
-    actions = [] 
+    u_actions, u_policies = [], []
+    c_actions, c_policies = [], []
     dest = []
     prev_obs = dict()
     
@@ -391,7 +433,8 @@ def agent(observation, configuration):
     
     # Unit Actions
     def unit_actions(unit, player, game_state, model, observation):
-        global actions
+        global u_actions
+        global u_policies
         global dest
         if unit.can_act(): # and (game_state.turn % 40 < 31 or (not in_city(unit.pos))):
             state = make_input(observation, unit.id)
@@ -400,33 +443,41 @@ def agent(observation, configuration):
 
             policy = p.squeeze(0).numpy()
 
-            action, pos = get_unit_action(policy, unit, dest)
-            actions.append(action)
+            action, pos, pol = get_unit_action(policy, unit, dest)
+            u_actions.append(action)
+            u_policies.append(pol)
             dest.append(pos)
             
     for unit in player.units:
         unit_actions(unit, player, game_state, model, observation)
         
+    sorted_u_actions = [i for _, i in sorted(zip(u_policies, u_actions), reverse=True)]
+        
     # City Actions
     def city_actions(city_tile, game_state, model, observation):
-        global actions
+        global c_actions
+        global c_policies
         global dest
         global unit_count
         if city_tile.can_act():
             # if almost reach 50 or 200 research point mark - try to reach them ASAP
             if 44 < player.research_points < 50 or 194 < player.research_points < 200:
-                actions.append(city_tile.research())
+                c_actions.append(city_tile.research())
+                c_policies.append(0)
                 player.research_points += 1
             # on the last step build as many workers as possible to win the game in case of tie
             elif game_state.turn > 350 and game_state.map.height < 32:
-                actions.append(city_tile.build_worker())
+                c_actions.append(city_tile.build_worker())
+                c_policies.append(0)
             # if number of cities is too high, switch to simple strategy to prevent exceeding of time limit
             elif player.city_tile_count > 80:
                 if unit_count < 80: 
-                    actions.append(city_tile.build_worker())
+                    c_actions.append(city_tile.build_worker())
+                    c_policies.append(0)
                     unit_count += 1
                 elif not player.researched_uranium():
-                    actions.append(city_tile.research())
+                    c_actions.append(city_tile.research())
+                    c_policies.append(0)
                     player.research_points += 1
             # else follow NN strategy
             else:
@@ -436,14 +487,17 @@ def agent(observation, configuration):
 
                 policy = p.squeeze(0).numpy()
 
-                action = get_city_action(policy, city_tile)
+                action, pol = get_city_action(policy, city_tile)
                 if action:
-                    actions.append(action)    
+                    c_actions.append(action)
+                    c_policies.append(pol)
+                    
 
     unit_count = len(player.units)
     for city in player.cities.values():
         for city_tile in city.citytiles:
             city_actions(city_tile, game_state, model, observation)
             
-    
-    return actions
+    sorted_c_actions = [i for _, i in sorted(zip(c_policies, c_actions), reverse=True)]
+
+    return u_actions + c_actions
